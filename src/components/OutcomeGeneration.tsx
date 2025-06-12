@@ -32,6 +32,7 @@ export const OutcomeGeneration: React.FC = () => {
     nextRound,
     currentRound,
     totalRounds,
+    isHost,
   } = useGameStore();
   
   const { sendMessage } = useWebRTCContext();
@@ -150,38 +151,68 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           console.log('🎭 Moving to next strategy:', currentPromptIndex + 1);
           setCurrentPromptIndex(prev => prev + 1);
         } else {
-          console.log('🎭 All outcomes generated, starting revelation');
+          console.log('🎭 All outcomes generated, host starting revelation');
           setIsGenerating(false);
-          // Start revealing outcomes after a short delay
-          setTimeout(() => {
-            setCurrentRevealIndex(0);
-          }, 1000);
+          // Only host starts revelation automatically, or wait for host command
+          if (isHost) {
+            setTimeout(() => {
+              setCurrentRevealIndex(0);
+            }, 1000);
+          }
         }
       }
     }
   }, [narrativeText, outcomeImageUrl, currentPromptIndex, strategies, players, processedOutcomes]);
   
-  // Remove the old generateOutcomes function and related mock functions
-  
-  // Auto-advance revelation every 5 seconds
-  useEffect(() => {
-    if (currentRevealIndex >= 0 && currentRevealIndex < generatedOutcomes.length) {
-      const timer = setTimeout(() => {
-        setCurrentRevealIndex(prev => prev + 1);
-      }, 5000);
-      
-      return () => clearTimeout(timer);
-    } else if (currentRevealIndex >= generatedOutcomes.length && generatedOutcomes.length > 0) {
-      // All outcomes revealed, move to next round or results
-      setTimeout(() => {
-        if (currentRound < totalRounds) {
-          nextRound();
-        } else {
-          setPhase('results');
-        }
-      }, 3000);
+  // Remove automatic revelation - let host control it
+  const handleNextReveal = () => {
+    if (!isHost) return;
+    
+    console.log('🎭 Host revealing next outcome');
+    if (currentRevealIndex < generatedOutcomes.length - 1) {
+      setCurrentRevealIndex(prev => prev + 1);
+      // Broadcast reveal command to all players
+      sendMessage({
+        type: 'reveal_next',
+        data: { revealIndex: currentRevealIndex + 1 }
+      });
+    } else {
+      // All outcomes revealed
+      console.log('🎭 All outcomes revealed');
     }
-  }, [currentRevealIndex, generatedOutcomes.length, currentRound, totalRounds, nextRound, setPhase]);
+  };
+
+  const handleStartNewRound = () => {
+    if (!isHost) return;
+    
+    console.log('🎭 Host starting new round');
+    if (currentRound < totalRounds) {
+      nextRound();
+      sendMessage({
+        type: 'start_new_round',
+        data: { newRound: currentRound + 1 }
+      });
+    } else {
+      setPhase('results');
+      sendMessage({
+        type: 'phase_change',
+        data: { newPhase: 'results' }
+      });
+    }
+  };
+
+  // Listen for host commands
+  useEffect(() => {
+    const handleRevealNext = (event: any) => {
+      console.log('🎭 Received reveal next event:', event.detail.revealIndex);
+      setCurrentRevealIndex(event.detail.revealIndex);
+    };
+    
+    window.addEventListener('revealNext', handleRevealNext);
+    return () => window.removeEventListener('revealNext', handleRevealNext);
+  }, []);
+  
+  // Remove the old auto-advance logic and replace with host-controlled logic
   
   if (isGenerating) {
     return (
@@ -305,13 +336,46 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
             ))}
           </div>
           
-          <button
-            onClick={() => setCurrentRevealIndex(prev => Math.min(prev + 1, generatedOutcomes.length))}
-            className="btn-secondary"
-            disabled={currentRevealIndex >= generatedOutcomes.length - 1}
-          >
-            Next Revelation
-          </button>
+          {isHost ? (
+            <div className="space-y-4">
+              {currentRevealIndex < generatedOutcomes.length - 1 ? (
+                <button
+                  onClick={handleNextReveal}
+                  className="btn-primary"
+                >
+                  Reveal Next Player
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-gray-400 mb-4">All fates revealed!</p>
+                  {currentRound < totalRounds ? (
+                    <button
+                      onClick={handleStartNewRound}
+                      className="btn-primary"
+                    >
+                      Start Round {currentRound + 1}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleStartNewRound}
+                      className="btn-primary"
+                    >
+                      View Final Results
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-gray-400">
+              <p>Waiting for host to continue...</p>
+              {currentRevealIndex < generatedOutcomes.length - 1 ? (
+                <p className="text-sm">({generatedOutcomes.length - currentRevealIndex - 1} more revelations)</p>
+              ) : (
+                <p className="text-sm">Ready for next round</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -17,6 +17,7 @@ export const ScenarioCreation: React.FC = () => {
     scenarioTimeLimit,
     setScenario,
     setPhase,
+    isHost,
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
@@ -53,12 +54,23 @@ export const ScenarioCreation: React.FC = () => {
     }
   );
   
-  // Start timer when component mounts
+  // Start timer when component mounts (only scenario maker)
   useEffect(() => {
     if (isScenarioMaker && !isTimerActive) {
+      console.log('🕒 Scenario maker starting timer for', scenarioTimeLimit, 'seconds');
       startTimer(scenarioTimeLimit);
+      
+      // Broadcast timer start to all players
+      sendMessage({
+        type: 'timer_start',
+        data: { 
+          phase: 'scenario', 
+          duration: scenarioTimeLimit, 
+          startTime: Date.now() 
+        }
+      });
     }
-  }, [isScenarioMaker, isTimerActive, scenarioTimeLimit, startTimer]);
+  }, [isScenarioMaker, isTimerActive, scenarioTimeLimit, startTimer, sendMessage]);
   
   // Auto-submit when timer expires
   useEffect(() => {

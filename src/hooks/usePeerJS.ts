@@ -4,7 +4,7 @@ import { useGameStore } from '../store/gameStore';
 import { setRoomIdInUrl } from '../utils/gameState';
 
 export interface WebRTCMessage {
-    type: 'scenario_broadcast' | 'strategy_submission' | 'outcome_broadcast' | 'score_update' | 'game_state' | 'player_joined' | 'player_left' | 'host_status' | 'game_state_sync' | 'rejoin_request' | 'ping' | 'pong';
+    type: 'scenario_broadcast' | 'strategy_submission' | 'outcome_broadcast' | 'score_update' | 'game_state' | 'player_joined' | 'player_left' | 'host_status' | 'game_state_sync' | 'rejoin_request' | 'ping' | 'pong' | 'timer_start' | 'timer_sync' | 'phase_change' | 'reveal_next' | 'start_new_round';
     data: any;
     timestamp: number;
     senderId: string;
@@ -170,6 +170,41 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
             case 'pong':
                 console.log('🏓 Received pong from:', message.senderId, 'latency:', Date.now() - message.data.originalTimestamp, 'ms');
+                break;
+
+            case 'timer_start':
+                console.log('🕒 Received timer start:', message.data);
+                const { duration, startTime } = message.data;
+                const elapsed = Math.max(0, (Date.now() - startTime) / 1000);
+                const remainingTime = Math.max(0, duration - elapsed);
+                const { setTimer } = useGameStore.getState();
+                setTimer(Math.floor(remainingTime), true);
+                break;
+
+            case 'phase_change':
+                console.log('🎭 Received phase change:', message.data.newPhase);
+                setPhase(message.data.newPhase);
+                break;
+
+            case 'timer_sync':
+                console.log('🕒 Received timer sync:', message.data);
+                const { setTimer: setTimerSync } = useGameStore.getState();
+                setTimerSync(message.data.timeRemaining, message.data.isActive);
+                break;
+
+            case 'reveal_next':
+                console.log('🎭 Received reveal next command:', message.data.revealIndex);
+                // This will be handled by OutcomeGeneration component state
+                // We can dispatch a custom event or use a state manager
+                window.dispatchEvent(new CustomEvent('revealNext', {
+                    detail: { revealIndex: message.data.revealIndex }
+                }));
+                break;
+
+            case 'start_new_round':
+                console.log('🎮 Received start new round command:', message.data);
+                const { nextRound: startNextRound } = useGameStore.getState();
+                startNextRound();
                 break;
 
             default:

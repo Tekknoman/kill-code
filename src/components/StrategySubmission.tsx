@@ -18,6 +18,7 @@ export const StrategySubmission: React.FC = () => {
     scenarioImageUrl,
     addStrategy,
     setPhase,
+    isHost,
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
@@ -66,21 +67,32 @@ export const StrategySubmission: React.FC = () => {
     });
   }, [hasSubmittedStrategy, hasSubmitted, strategyInput, currentPlayerId, addStrategy, sendMessage]);
   
-  // Start timer when component mounts
+  // Start timer when component mounts (only host controls timer)
   useEffect(() => {
     console.log('🕒 StrategySubmission timer effect:', { 
+      isHost,
       isTimerActive, 
       strategyTimeLimit, 
       timeRemaining 
     });
     
-    if (!isTimerActive) {
-      console.log('🕒 Starting strategy timer for', strategyTimeLimit, 'seconds');
+    if (isHost && !isTimerActive) {
+      console.log('🕒 Host starting strategy timer for', strategyTimeLimit, 'seconds');
       startTimer(strategyTimeLimit);
+      
+      // Broadcast timer start to all players
+      sendMessage({
+        type: 'timer_start',
+        data: { 
+          phase: 'strategy', 
+          duration: strategyTimeLimit, 
+          startTime: Date.now() 
+        }
+      });
     }
-  }, [isTimerActive, strategyTimeLimit, startTimer]);
+  }, [isHost, isTimerActive, strategyTimeLimit, startTimer, sendMessage]);
   
-  // Auto-submit empty strategy when timer expires
+  // Auto-submit empty strategy when timer expires (only for current player)
   useEffect(() => {
     console.log('⏰ Auto-submit effect:', { 
       timeRemaining, 
@@ -89,20 +101,34 @@ export const StrategySubmission: React.FC = () => {
       shouldAutoSubmit: timeRemaining === 0 && !hasSubmittedStrategy && !hasSubmitted
     });
     
+    // Only auto-submit if this player hasn't submitted yet and timer reached 0
     if (timeRemaining === 0 && !hasSubmittedStrategy && !hasSubmitted) {
-      console.log('⏰ Timer expired, auto-submitting strategy');
+      console.log('⏰ Timer expired, auto-submitting empty strategy for player:', currentPlayerId);
       handleSubmitStrategy();
     }
-  }, [timeRemaining, hasSubmittedStrategy, hasSubmitted, handleSubmitStrategy]);
+  }, [timeRemaining, hasSubmittedStrategy, hasSubmitted, handleSubmitStrategy, currentPlayerId]);
   
-  // Move to outcomes phase when all strategies are submitted
+  // Move to outcomes phase when all strategies are submitted (only host controls phase transitions)
   useEffect(() => {
-    if (allStrategiesSubmitted && strategies.length > 0) {
+    console.log('🎯 Strategy completion check:', {
+      allStrategiesSubmitted,
+      strategiesLength: strategies.length,
+      activePlayers: activePlayers.length,
+      isHost
+    });
+    
+    if (isHost && allStrategiesSubmitted && strategies.length > 0) {
+      console.log('🎯 All strategies submitted, host transitioning to outcomes phase');
       setTimeout(() => {
         setPhase('outcomes');
+        // Broadcast phase change
+        sendMessage({
+          type: 'phase_change',
+          data: { newPhase: 'outcomes' }
+        });
       }, 2000); // Give a moment to see all submissions
     }
-  }, [allStrategiesSubmitted, strategies.length, setPhase]);
+  }, [isHost, allStrategiesSubmitted, strategies.length, setPhase, activePlayers.length, sendMessage]);
   
   // Update strategy input with speech recognition
   useEffect(() => {
