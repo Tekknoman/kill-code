@@ -4,7 +4,7 @@ import { useGameStore } from '../store/gameStore';
 import { setRoomIdInUrl } from '../utils/gameState';
 
 export interface WebRTCMessage {
-    type: 'scenario_broadcast' | 'strategy_submission' | 'outcome_broadcast' | 'score_update' | 'game_state' | 'player_joined' | 'player_left' | 'host_status' | 'game_state_sync' | 'rejoin_request' | 'ping' | 'pong' | 'timer_start' | 'timer_sync' | 'phase_change' | 'reveal_next' | 'start_new_round';
+    type: 'scenario_broadcast' | 'strategy_submission' | 'outcome_broadcast' | 'score_update' | 'game_state' | 'player_joined' | 'player_left' | 'host_status' | 'game_state_sync' | 'rejoin_request' | 'ping' | 'pong' | 'timer_start' | 'timer_sync' | 'phase_change' | 'reveal_next' | 'start_new_round' | 'all_outcomes_ready';
     data: any;
     timestamp: number;
     senderId: string;
@@ -102,7 +102,15 @@ export const useWebRTC = (): UseWebRTCReturn => {
                 break;
 
             case 'outcome_broadcast':
+                console.log('🎭 Received outcome broadcast:', message.data);
                 addOutcome(message.data);
+
+                // If this includes complete outcome data, sync it to local state
+                if (message.data.completeOutcome) {
+                    window.dispatchEvent(new CustomEvent('outcomeReceived', {
+                        detail: { outcome: message.data.completeOutcome }
+                    }));
+                }
                 break;
 
             case 'score_update':
@@ -148,15 +156,42 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
             case 'game_state_sync':
                 // Comprehensive game state sync
-                console.log('Syncing game state:', message.data);
+                console.log('🎭 Syncing game state:', message.data);
+
                 if (message.data.currentPhase) {
+                    console.log('🎭 Updating phase to:', message.data.currentPhase);
                     setPhase(message.data.currentPhase);
                 }
+                if (message.data.currentScenarioMakerId) {
+                    console.log('🎭 Updating scenario maker to:', message.data.currentScenarioMakerId);
+                    setScenarioMaker(message.data.currentScenarioMakerId);
+                }
                 if (message.data.scenarioMakerId) {
+                    console.log('🎭 Updating scenario maker (legacy) to:', message.data.scenarioMakerId);
                     setScenarioMaker(message.data.scenarioMakerId);
                 }
                 if (message.data.scenarioText) {
+                    console.log('🎭 Updating scenario text');
                     setScenario(message.data.scenarioText, message.data.scenarioImageUrl);
+                }
+                if (message.data.currentRound !== undefined) {
+                    console.log('🎭 Updating round to:', message.data.currentRound);
+                    useGameStore.setState({ currentRound: message.data.currentRound });
+                }
+                if (message.data.players) {
+                    console.log('🎭 Syncing players from host');
+                    // Update players to match host state
+                    message.data.players.forEach((player: any) => {
+                        const existingPlayer = useGameStore.getState().players.find(p => p.id === player.id);
+                        if (existingPlayer) {
+                            updatePlayer(player.id, player);
+                        }
+                    });
+                }
+                if (message.data.resetTimer) {
+                    console.log('🎭 Resetting timer');
+                    const { setTimer } = useGameStore.getState();
+                    setTimer(0, false);
                 }
                 break;
 
@@ -193,18 +228,33 @@ export const useWebRTC = (): UseWebRTCReturn => {
                 break;
 
             case 'reveal_next':
-                console.log('🎭 Received reveal next command:', message.data.revealIndex);
-                // This will be handled by OutcomeGeneration component state
-                // We can dispatch a custom event or use a state manager
+                console.log('🎭 Received reveal next command:', message.data);
                 window.dispatchEvent(new CustomEvent('revealNext', {
-                    detail: { revealIndex: message.data.revealIndex }
+                    detail: {
+                        revealIndex: message.data.revealIndex,
+                        outcomeData: message.data.outcomeData
+                    }
                 }));
                 break;
 
             case 'start_new_round':
-                console.log('🎮 Received start new round command:', message.data);
-                const { nextRound: startNextRound } = useGameStore.getState();
-                startNextRound();
+                console.log('🎮 Received start new round command:', {
+                    newRound: message.data.newRound,
+                    newScenarioMaker: message.data.newScenarioMaker,
+                    newScenarioMakerName: message.data.newScenarioMakerName
+                });
+                // Don't call nextRound() here - just wait for game_state_sync
+                // The game_state_sync message should handle the state update
+                break;
+
+            case 'all_outcomes_ready':
+                console.log('🎭 Received all outcomes ready:', message.data);
+                window.dispatchEvent(new CustomEvent('allOutcomesReady', {
+                    detail: {
+                        outcomes: message.data.outcomes,
+                        revealIndex: message.data.revealIndex
+                    }
+                }));
                 break;
 
             default:

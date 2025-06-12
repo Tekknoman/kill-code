@@ -86,6 +86,17 @@ export const ScenarioCreation: React.FC = () => {
     }
   }, [transcript]);
   
+  // Debug logging for scenario maker state
+  useEffect(() => {
+    console.log('🎭 ScenarioCreation state check:', {
+      currentPlayerId,
+      currentScenarioMakerId,
+      isScenarioMaker,
+      isHost,
+      playerName: useGameStore.getState().players.find(p => p.id === currentPlayerId)?.name || 'Unknown'
+    });
+  }, [currentPlayerId, currentScenarioMakerId, isScenarioMaker, isHost]);
+  
   const handleStartListening = () => {
     if (!browserSupportsSpeechRecognition) {
       alert('Speech recognition is not supported in your browser');

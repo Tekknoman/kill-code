@@ -37,9 +37,9 @@ export const OutcomeGeneration: React.FC = () => {
   
   const { sendMessage } = useWebRTCContext();
   
-  // Generate narrative using Pollinations
+  // Generate narrative using Pollinations (only host generates)
   const narrativeText = usePollinationsText(
-    narrativePrompts[currentPromptIndex] || '', 
+    isHost && narrativePrompts[currentPromptIndex] || '', 
     { 
       seed: -1, // Random seed for variety
       model: 'openai',
@@ -47,9 +47,9 @@ export const OutcomeGeneration: React.FC = () => {
     }
   );
   
-  // Generate outcome image using Pollinations
+  // Generate outcome image using Pollinations (only host generates)
   const outcomeImageUrl = usePollinationsImage(
-    narrativeText ? `A dramatic survival scene: ${narrativeText.slice(0, 100)}...` : '',
+    isHost && narrativeText ? `A dramatic survival scene: ${narrativeText.slice(0, 100)}...` : '',
     {
       width: 512,
       height: 512,
@@ -60,9 +60,10 @@ export const OutcomeGeneration: React.FC = () => {
     }
   );
   
-  // Initialize prompts when component mounts
+  // Initialize prompts when component mounts (only host does this)
   useEffect(() => {
-    if (strategies.length > 0 && narrativePrompts.length === 0) {
+    if (isHost && strategies.length > 0 && narrativePrompts.length === 0) {
+      console.log('🎭 Host initializing narrative prompts for', strategies.length, 'strategies');
       const prompts = strategies.map(strategy => {
         const player = players.find(p => p.id === strategy.playerId);
         if (!player) return '';
@@ -76,22 +77,23 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
       
       setNarrativePrompts(prompts);
     }
-  }, [strategies, players, scenarioText, narrativePrompts.length]);
+  }, [isHost, strategies, players, scenarioText, narrativePrompts.length]);
   
-  // Process narrative when it's generated
+  // Process narrative when it's generated (only host generates outcomes)
   useEffect(() => {
     console.log('🎭 OutcomeGeneration effect triggered:', {
+      isHost,
       narrativeText: !!narrativeText,
       currentPromptIndex,
       strategiesLength: strategies.length,
       processedOutcomesSize: processedOutcomes.size
     });
     
-    if (narrativeText && currentPromptIndex < strategies.length && !processedOutcomes.has(currentPromptIndex)) {
+    if (isHost && narrativeText && currentPromptIndex < strategies.length && !processedOutcomes.has(currentPromptIndex)) {
       const strategy = strategies[currentPromptIndex];
       const player = players.find(p => p.id === strategy.playerId);
       
-      console.log('🎭 Processing outcome for:', { 
+      console.log('🎭 Host processing outcome for:', { 
         currentPromptIndex, 
         playerId: strategy.playerId, 
         playerName: player?.name 
@@ -112,7 +114,7 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           scoreGained,
         };
         
-        console.log('🎭 Generated outcome:', outcome);
+        console.log('🎭 Host generated outcome:', outcome);
         setGeneratedOutcomes(prev => [...prev, outcome]);
         
         // Mark this outcome as processed
@@ -133,7 +135,7 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           score: player.score + scoreGained
         });
         
-        // Broadcast outcome
+        // Broadcast complete outcome to all players
         sendMessage({
           type: 'outcome_broadcast',
           data: {
@@ -143,26 +145,37 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
             audioUrl: undefined,
             survived,
             score: scoreGained,
+            // Include complete outcome data for synchronization
+            completeOutcome: outcome
           }
         });
         
         // Move to next strategy or finish generation
         if (currentPromptIndex + 1 < strategies.length) {
-          console.log('🎭 Moving to next strategy:', currentPromptIndex + 1);
+          console.log('🎭 Host moving to next strategy:', currentPromptIndex + 1);
           setCurrentPromptIndex(prev => prev + 1);
         } else {
-          console.log('🎭 All outcomes generated, host starting revelation');
+          console.log('🎭 All outcomes generated, preparing to broadcast complete set');
           setIsGenerating(false);
-          // Only host starts revelation automatically, or wait for host command
-          if (isHost) {
-            setTimeout(() => {
-              setCurrentRevealIndex(0);
-            }, 1000);
-          }
+          
+          // Wait for state to stabilize then broadcast all outcomes
+          setTimeout(() => {
+            const allOutcomes = [...generatedOutcomes, outcome];
+            console.log('🎭 Broadcasting all outcomes ready:', allOutcomes.length, 'outcomes');
+            
+            sendMessage({
+              type: 'all_outcomes_ready',
+              data: {
+                outcomes: allOutcomes,
+                revealIndex: 0
+              }
+            });
+            setCurrentRevealIndex(0);
+          }, 500);
         }
       }
     }
-  }, [narrativeText, outcomeImageUrl, currentPromptIndex, strategies, players, processedOutcomes]);
+  }, [isHost, narrativeText, outcomeImageUrl, currentPromptIndex, strategies, players, processedOutcomes, addOutcome, updatePlayer, sendMessage]);
   
   // Remove automatic revelation - let host control it
   const handleNextReveal = () => {
@@ -170,11 +183,17 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
     
     console.log('🎭 Host revealing next outcome');
     if (currentRevealIndex < generatedOutcomes.length - 1) {
-      setCurrentRevealIndex(prev => prev + 1);
-      // Broadcast reveal command to all players
+      const nextIndex = currentRevealIndex + 1;
+      const outcomeToReveal = generatedOutcomes[nextIndex];
+      
+      setCurrentRevealIndex(nextIndex);
+      // Broadcast reveal command with outcome data to all players
       sendMessage({
         type: 'reveal_next',
-        data: { revealIndex: currentRevealIndex + 1 }
+        data: { 
+          revealIndex: nextIndex,
+          outcomeData: outcomeToReveal
+        }
       });
     } else {
       // All outcomes revealed
@@ -185,14 +204,58 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
   const handleStartNewRound = () => {
     if (!isHost) return;
     
-    console.log('🎭 Host starting new round');
+    console.log('🎭 Host starting new round from current round:', currentRound);
+    
     if (currentRound < totalRounds) {
+      // Host calls nextRound to update state
       nextRound();
-      sendMessage({
-        type: 'start_new_round',
-        data: { newRound: currentRound + 1 }
-      });
+      
+      // Wait for state to update, then broadcast complete state
+      setTimeout(() => {
+        const state = useGameStore.getState();
+        console.log('🎭 Broadcasting new round state:', {
+          currentRound: state.currentRound,
+          currentScenarioMakerId: state.currentScenarioMakerId,
+          currentPhase: state.currentPhase,
+          playersCount: state.players.length,
+          allPlayers: state.players.map(p => ({ id: p.id, name: p.name, isConnected: p.isConnected }))
+        });
+        
+        // Find the scenario maker details
+        const scenarioMaker = state.players.find(p => p.id === state.currentScenarioMakerId);
+        console.log('🎭 New scenario maker details:', {
+          id: state.currentScenarioMakerId,
+          name: scenarioMaker?.name || 'Unknown',
+          exists: !!scenarioMaker
+        });
+        
+        // Send comprehensive game state sync first
+        sendMessage({
+          type: 'game_state_sync',
+          data: {
+            currentRound: state.currentRound,
+            currentScenarioMakerId: state.currentScenarioMakerId,
+            currentPhase: state.currentPhase,
+            scenarioText: '',
+            scenarioImageUrl: null,
+            resetTimer: true,
+            // Include all players to ensure scenario maker is known
+            players: state.players
+          }
+        });
+        
+        // Also send specific start new round message
+        sendMessage({
+          type: 'start_new_round',
+          data: { 
+            newRound: state.currentRound,
+            newScenarioMaker: state.currentScenarioMakerId,
+            newScenarioMakerName: scenarioMaker?.name || 'Unknown'
+          }
+        });
+      }, 200);
     } else {
+      console.log('🎭 Game complete, moving to results');
       setPhase('results');
       sendMessage({
         type: 'phase_change',
@@ -201,29 +264,72 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
     }
   };
 
-  // Listen for host commands
+  // Listen for host commands and outcome data
   useEffect(() => {
     const handleRevealNext = (event: any) => {
-      console.log('🎭 Received reveal next event:', event.detail.revealIndex);
+      console.log('🎭 Received reveal next event:', event.detail);
       setCurrentRevealIndex(event.detail.revealIndex);
     };
     
+    const handleOutcomeReceived = (event: any) => {
+      console.log('🎭 Received outcome data:', event.detail.outcome);
+      setGeneratedOutcomes(prev => {
+        const exists = prev.find(o => o.playerId === event.detail.outcome.playerId);
+        if (exists) return prev;
+        return [...prev, event.detail.outcome];
+      });
+    };
+    
+    const handleAllOutcomesReady = (event: any) => {
+      console.log('🎭 Received all outcomes ready:', event.detail);
+      const { outcomes, revealIndex } = event.detail;
+      console.log('🎭 Setting outcomes for non-host player:', outcomes.length, 'outcomes');
+      
+      // Ensure all outcomes are added to the game store
+      outcomes.forEach((outcome: PlayerOutcome) => {
+        addOutcome({
+          playerId: outcome.playerId,
+          text: outcome.narrative,
+          imageUrl: outcome.imageUrl,
+          audioUrl: undefined,
+          survived: outcome.survived,
+          score: outcome.scoreGained,
+        });
+      });
+      
+      setGeneratedOutcomes(outcomes);
+      setCurrentRevealIndex(revealIndex);
+      setIsGenerating(false);
+    };
+    
     window.addEventListener('revealNext', handleRevealNext);
-    return () => window.removeEventListener('revealNext', handleRevealNext);
+    window.addEventListener('outcomeReceived', handleOutcomeReceived);
+    window.addEventListener('allOutcomesReady', handleAllOutcomesReady);
+    
+    return () => {
+      window.removeEventListener('revealNext', handleRevealNext);
+      window.removeEventListener('outcomeReceived', handleOutcomeReceived);
+      window.removeEventListener('allOutcomesReady', handleAllOutcomesReady);
+    };
   }, []);
   
   // Remove the old auto-advance logic and replace with host-controlled logic
   
-  if (isGenerating) {
+  if (isGenerating || (!isHost && generatedOutcomes.length === 0)) {
     return (
       <div className="min-h-screen bg-gray-900 p-6 flex items-center justify-center">
         <div className="card text-center max-w-2xl">
-          <h2 className="text-3xl font-bold mb-6">Determining Fates...</h2>
+          <h2 className="text-3xl font-bold mb-6">
+            {isHost ? "Determining Fates..." : "Waiting for Host to Generate Outcomes..."}
+          </h2>
           <div className="animate-pulse-slow mb-6">
             <div className="w-20 h-20 bg-purple-600 rounded-full mx-auto"></div>
           </div>
           <p className="text-gray-400 mb-4">
-            The AI is analyzing each strategy and determining who survives...
+            {isHost 
+              ? "The AI is analyzing each strategy and determining who survives..."
+              : "The host is working with the AI to determine everyone's fate..."
+            }
           </p>
           <div className="flex justify-center space-x-2">
             <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
