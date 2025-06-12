@@ -1,0 +1,5 @@
+/* App-specific styles */
+.game-container {
+  min-height: 100vh;
+  background: #0f0f0f;
+}
