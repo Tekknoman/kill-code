@@ -184,9 +184,20 @@ export const useGameStore = create<GameState>((set) => ({
         scenarioAudioUrl: audioUrl,
     }),
 
-    addStrategy: (strategy) => set((state) => ({
-        strategies: [...state.strategies, strategy]
-    })),
+    addStrategy: (strategy) => {
+        console.log('📝 Adding strategy to store:', strategy);
+        return set((state) => {
+            const existingStrategy = state.strategies.find(s => s.playerId === strategy.playerId);
+            if (existingStrategy) {
+                console.log('⚠️ Strategy already exists for player:', strategy.playerId);
+                return state; // Don't add duplicate
+            }
+            console.log('✅ Strategy added successfully. Total strategies:', state.strategies.length + 1);
+            return {
+                strategies: [...state.strategies, strategy]
+            };
+        });
+    },
 
     clearStrategies: () => set({ strategies: [] }),
 

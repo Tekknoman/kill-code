@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import { useGameStore } from '../store/gameStore';
 import { useGameTimer } from '../hooks/useGameTimer';
@@ -33,20 +33,67 @@ export const StrategySubmission: React.FC = () => {
   const activePlayers = players.filter(p => p.isConnected);
   const hasSubmittedStrategy = strategies.some(s => s.playerId === currentPlayerId);
   const allStrategiesSubmitted = strategies.length >= activePlayers.length;
+
+  // Define handleSubmitStrategy first so it can be used in useEffect
+  const handleSubmitStrategy = useCallback(() => {
+    console.log('📝 Submitting strategy:', { 
+      hasSubmittedStrategy, 
+      hasSubmitted, 
+      strategyInput: strategyInput.trim(),
+      currentPlayerId 
+    });
+    
+    if (hasSubmittedStrategy || hasSubmitted) {
+      console.log('⚠️ Already submitted strategy, skipping');
+      return;
+    }
+    
+    const strategy = {
+      playerId: currentPlayerId,
+      text: strategyInput.trim() || 'No strategy submitted',
+      submittedAt: Date.now(),
+    };
+    
+    console.log('📝 Adding strategy to store:', strategy);
+    addStrategy(strategy);
+    setHasSubmitted(true);
+    
+    // Send strategy to all players
+    console.log('📡 Broadcasting strategy submission');
+    sendMessage({
+      type: 'strategy_submission',
+      data: strategy,
+    });
+  }, [hasSubmittedStrategy, hasSubmitted, strategyInput, currentPlayerId, addStrategy, sendMessage]);
   
   // Start timer when component mounts
   useEffect(() => {
+    console.log('🕒 StrategySubmission timer effect:', { 
+      isTimerActive, 
+      strategyTimeLimit, 
+      timeRemaining 
+    });
+    
     if (!isTimerActive) {
+      console.log('🕒 Starting strategy timer for', strategyTimeLimit, 'seconds');
       startTimer(strategyTimeLimit);
     }
   }, [isTimerActive, strategyTimeLimit, startTimer]);
   
   // Auto-submit empty strategy when timer expires
   useEffect(() => {
+    console.log('⏰ Auto-submit effect:', { 
+      timeRemaining, 
+      hasSubmittedStrategy, 
+      hasSubmitted,
+      shouldAutoSubmit: timeRemaining === 0 && !hasSubmittedStrategy && !hasSubmitted
+    });
+    
     if (timeRemaining === 0 && !hasSubmittedStrategy && !hasSubmitted) {
+      console.log('⏰ Timer expired, auto-submitting strategy');
       handleSubmitStrategy();
     }
-  }, [timeRemaining, hasSubmittedStrategy, hasSubmitted]);
+  }, [timeRemaining, hasSubmittedStrategy, hasSubmitted, handleSubmitStrategy]);
   
   // Move to outcomes phase when all strategies are submitted
   useEffect(() => {
@@ -76,25 +123,6 @@ export const StrategySubmission: React.FC = () => {
   
   const handleStopListening = () => {
     SpeechRecognition.stopListening();
-  };
-  
-  const handleSubmitStrategy = () => {
-    if (hasSubmittedStrategy || hasSubmitted) return;
-    
-    const strategy = {
-      playerId: currentPlayerId,
-      text: strategyInput.trim() || 'No strategy submitted',
-      submittedAt: Date.now(),
-    };
-    
-    addStrategy(strategy);
-    setHasSubmitted(true);
-    
-    // Send strategy to all players
-    sendMessage({
-      type: 'strategy_submission',
-      data: strategy,
-    });
   };
   
   if (hasSubmittedStrategy || hasSubmitted) {

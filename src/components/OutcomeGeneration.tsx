@@ -20,6 +20,7 @@ export const OutcomeGeneration: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(true);
   const [narrativePrompts, setNarrativePrompts] = useState<string[]>([]);
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
+  const [processedOutcomes, setProcessedOutcomes] = useState<Set<number>>(new Set());
   
   const {
     players,
@@ -78,9 +79,22 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
   
   // Process narrative when it's generated
   useEffect(() => {
-    if (narrativeText && currentPromptIndex < strategies.length) {
+    console.log('🎭 OutcomeGeneration effect triggered:', {
+      narrativeText: !!narrativeText,
+      currentPromptIndex,
+      strategiesLength: strategies.length,
+      processedOutcomesSize: processedOutcomes.size
+    });
+    
+    if (narrativeText && currentPromptIndex < strategies.length && !processedOutcomes.has(currentPromptIndex)) {
       const strategy = strategies[currentPromptIndex];
       const player = players.find(p => p.id === strategy.playerId);
+      
+      console.log('🎭 Processing outcome for:', { 
+        currentPromptIndex, 
+        playerId: strategy.playerId, 
+        playerName: player?.name 
+      });
       
       if (player) {
         const survived = narrativeText.includes('SURVIVED');
@@ -97,7 +111,11 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           scoreGained,
         };
         
+        console.log('🎭 Generated outcome:', outcome);
         setGeneratedOutcomes(prev => [...prev, outcome]);
+        
+        // Mark this outcome as processed
+        setProcessedOutcomes(prev => new Set([...prev, currentPromptIndex]));
         
         // Add to game state
         addOutcome({
@@ -129,8 +147,10 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         
         // Move to next strategy or finish generation
         if (currentPromptIndex + 1 < strategies.length) {
+          console.log('🎭 Moving to next strategy:', currentPromptIndex + 1);
           setCurrentPromptIndex(prev => prev + 1);
         } else {
+          console.log('🎭 All outcomes generated, starting revelation');
           setIsGenerating(false);
           // Start revealing outcomes after a short delay
           setTimeout(() => {
@@ -139,7 +159,7 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         }
       }
     }
-  }, [narrativeText, outcomeImageUrl, currentPromptIndex, strategies, players]);
+  }, [narrativeText, outcomeImageUrl, currentPromptIndex, strategies, players, processedOutcomes]);
   
   // Remove the old generateOutcomes function and related mock functions
   
