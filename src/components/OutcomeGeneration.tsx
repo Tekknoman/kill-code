@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { usePollinationsText, usePollinationsImage } from '@pollinations/react';
 import { useGameStore } from '../store/gameStore';
-import { useWebRTC } from '../hooks/usePeerJS';
+import { useWebRTCContext } from '../context/WebRTCContext';
 
 interface PlayerOutcome {
   playerId: string;
@@ -33,7 +33,7 @@ export const OutcomeGeneration: React.FC = () => {
     totalRounds,
   } = useGameStore();
   
-  const { sendMessage } = useWebRTC();
+  const { sendMessage } = useWebRTCContext();
   
   // Generate narrative using Pollinations
   const narrativeText = usePollinationsText(

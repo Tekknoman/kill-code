@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import { useGameStore } from '../store/gameStore';
 import { useGameTimer } from '../hooks/useGameTimer';
-import { useWebRTC } from '../hooks/usePeerJS';
+import { useWebRTCContext } from '../context/WebRTCContext';
 import { Timer } from './Timer';
 
 export const StrategySubmission: React.FC = () => {
@@ -21,7 +21,7 @@ export const StrategySubmission: React.FC = () => {
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
-  const { sendMessage } = useWebRTC();
+  const { sendMessage } = useWebRTCContext();
   
   const {
     transcript,

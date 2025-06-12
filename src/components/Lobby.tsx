@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGameStore } from '../store/gameStore';
-import { useWebRTC } from '../hooks/usePeerJS';
+import { useWebRTCContext } from '../context/WebRTCContext';
 import { PlayerList } from './PlayerList';
+import { getRoomIdFromUrl, setRoomIdInUrl } from '../utils/gameState';
+import { getOrCreatePlayerId, getPlayerName, setPlayerName as savePlayerName } from '../utils/playerId';
 
 export const Lobby: React.FC = () => {
   const [playerName, setPlayerName] = useState('');
@@ -18,51 +20,113 @@ export const Lobby: React.FC = () => {
     setCurrentPlayer,
     addPlayer,
     setPhase,
+    loadSavedState,
   } = useGameStore();
   
-  const { connect, isConnected, isConnecting, error, roomId } = useWebRTC();
+  const { connect, isConnected, isConnecting, error, roomId, sendMessage } = useWebRTCContext();
+  
+  // Try to load saved state on component mount
+  useEffect(() => {
+    // Load persistent player name if available
+    const savedPlayerName = getPlayerName();
+    if (savedPlayerName) {
+      setPlayerName(savedPlayerName);
+    }
+    
+    const urlRoomId = getRoomIdFromUrl();
+    const hasSavedState = loadSavedState();
+    
+    if (hasSavedState && urlRoomId) {
+      // Auto-reconnect if we have both saved state and room ID in URL
+      const savedState = useGameStore.getState();
+      const persistentPlayerId = getOrCreatePlayerId();
+      
+      if (persistentPlayerId && savedState.players.length > 0) {
+        // Try to find the player by persistent ID
+        let currentPlayer = savedState.players.find(p => p.id === persistentPlayerId);
+        
+        // If not found by persistent ID, try to find by stored currentPlayerId (fallback)
+        if (!currentPlayer && savedState.currentPlayerId) {
+          currentPlayer = savedState.players.find(p => p.id === savedState.currentPlayerId);
+        }
+        
+        if (currentPlayer) {
+          setPlayerName(currentPlayer.name);
+          setJoinRoomCode(urlRoomId);
+          // Auto-connect after a short delay
+          setTimeout(() => {
+            console.log('🔄 Auto-reconnecting with persistent ID:', persistentPlayerId);
+            connect(urlRoomId, savedState.isHost, currentPlayer.name, persistentPlayerId);
+          }, 1000);
+        }
+      }
+    } else if (urlRoomId && !hasSavedState) {
+      // Just set the room code if it's in URL but no saved state
+      setJoinRoomCode(urlRoomId);
+      setShowCreateRoom(false);
+    }
+  }, []);
   
   const handleCreateRoom = async () => {
     if (!playerName.trim()) return;
     
-    const playerId = crypto.randomUUID();
+    const persistentPlayerId = getOrCreatePlayerId();
+    savePlayerName(playerName.trim()); // Save name to localStorage
     
-    setCurrentPlayer(playerId);
+    setCurrentPlayer(persistentPlayerId);
     addPlayer({
-      id: playerId,
+      id: persistentPlayerId,
       name: playerName.trim(),
       score: 0,
       isConnected: true,
     });
     
+    console.log('🏠 Creating room with persistent player ID:', persistentPlayerId);
     // Connect as host - the hook will generate a room code
-    connect('', true, playerName.trim()); // Empty string for room ID since we're creating
+    connect('', true, playerName.trim(), persistentPlayerId);
   };
   
   const handleJoinRoom = async () => {
     if (!playerName.trim() || !joinRoomCode.trim()) return;
     
-    const playerId = crypto.randomUUID();
+    const persistentPlayerId = getOrCreatePlayerId();
+    savePlayerName(playerName.trim()); // Save name to localStorage
     
-    setCurrentPlayer(playerId);
+    setCurrentPlayer(persistentPlayerId);
     addPlayer({
-      id: playerId,
+      id: persistentPlayerId,
       name: playerName.trim(),
       score: 0,
       isConnected: true,
     });
     
+    console.log('🚪 Joining room with persistent player ID:', persistentPlayerId);
+    // Set room ID in URL
+    setRoomIdInUrl(joinRoomCode.trim().toUpperCase());
+    
     // Connect to host
-    connect(joinRoomCode.trim().toUpperCase(), false, playerName.trim());
+    connect(joinRoomCode.trim().toUpperCase(), false, playerName.trim(), persistentPlayerId);
   };
   
   const handleStartGame = () => {
+    console.log('🎮 Starting game with', players.length, 'players');
     if (players.length < 2) return;
     
     // Set the first player as scenario maker
     const firstPlayer = players[0];
+    console.log('🎭 Setting scenario maker:', firstPlayer);
     useGameStore.getState().setScenarioMaker(firstPlayer.id);
     setPhase('scenario');
+    
+    // Broadcast game state change to all players
+    console.log('📡 Broadcasting game state sync');
+    sendMessage({
+      type: 'game_state_sync',
+      data: {
+        currentPhase: 'scenario',
+        scenarioMakerId: firstPlayer.id,
+      }
+    });
   };
   
   if (isConnected && players.length > 0) {

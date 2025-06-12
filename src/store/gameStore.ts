@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { saveGameState, getGameState, clearGameState } from '../utils/gameState';
+import { getOrCreatePlayerId } from '../utils/playerId';
 
 export interface Player {
     id: string;
@@ -80,6 +82,12 @@ export interface GameState {
 
     setConnection: (status: 'disconnected' | 'connecting' | 'connected') => void;
 
+    // Persistence and synchronization
+    saveCurrentState: () => void;
+    loadSavedState: () => boolean;
+    clearSavedState: () => void;
+    syncGameState: (state: Partial<GameState>) => void;
+
     resetGame: () => void;
 }
 
@@ -91,7 +99,7 @@ const initialState = {
     strategyTimeLimit: 90,
 
     players: [],
-    currentPlayerId: '',
+    currentPlayerId: getOrCreatePlayerId(), // Use persistent UUID instead of random
 
     currentRound: 1,
     totalRounds: 5,
@@ -193,5 +201,61 @@ export const useGameStore = create<GameState>((set) => ({
         isConnected: status === 'connected'
     }),
 
-    resetGame: () => set(initialState),
+    // Persistence and synchronization
+    saveCurrentState: () => {
+        const state = useGameStore.getState();
+        saveGameState({
+            playerId: state.currentPlayerId,
+            playerName: state.players.find(p => p.id === state.currentPlayerId)?.name || '',
+            roomId: state.roomId,
+            isHost: state.isHost,
+            players: state.players,
+            currentPhase: state.currentPhase,
+            currentRound: state.currentRound,
+            totalRounds: state.totalRounds,
+            scenarioText: state.scenarioText,
+            scenarioImageUrl: state.scenarioImageUrl,
+            strategies: state.strategies,
+            outcomes: state.outcomes,
+        });
+    },
+
+    loadSavedState: () => {
+        const savedState = getGameState();
+        if (savedState) {
+            set({
+                currentPlayerId: savedState.playerId,
+                roomId: savedState.roomId,
+                isHost: savedState.isHost,
+                players: savedState.players,
+                currentPhase: savedState.currentPhase as GamePhase,
+                currentRound: savedState.currentRound,
+                totalRounds: savedState.totalRounds,
+                scenarioText: savedState.scenarioText || '',
+                scenarioImageUrl: savedState.scenarioImageUrl,
+                strategies: savedState.strategies,
+                outcomes: savedState.outcomes,
+            });
+            return true;
+        }
+        return false;
+    },
+
+    clearSavedState: () => {
+        clearGameState();
+    },
+
+    syncGameState: (updates) => set((state) => {
+        const newState = { ...state, ...updates };
+        // Auto-save when syncing
+        setTimeout(() => {
+            useGameStore.getState().saveCurrentState();
+        }, 0);
+        return newState;
+    }),
+
+    resetGame: () => {
+        clearGameState();
+        set(initialState);
+    },
 }));

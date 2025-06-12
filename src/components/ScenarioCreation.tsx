@@ -3,12 +3,13 @@ import { usePollinationsText, usePollinationsImage } from '@pollinations/react';
 import { SpeechRecognition, useSpeechRecognition } from '../utils/speechRecognition';
 import { useGameStore } from '../store/gameStore';
 import { useGameTimer } from '../hooks/useGameTimer';
-import { useWebRTC } from '../hooks/usePeerJS';
+import { useWebRTCContext } from '../context/WebRTCContext';
 import { Timer } from './Timer';
 
 export const ScenarioCreation: React.FC = () => {
   const [scenarioInput, setScenarioInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [submittedScenario, setSubmittedScenario] = useState('');
   
   const {
     currentPlayerId,
@@ -19,7 +20,7 @@ export const ScenarioCreation: React.FC = () => {
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
-  const { sendMessage } = useWebRTC();
+  const { sendMessage, isConnected } = useWebRTCContext();
   
   const {
     transcript,
@@ -30,9 +31,9 @@ export const ScenarioCreation: React.FC = () => {
   
   const isScenarioMaker = currentPlayerId === currentScenarioMakerId;
   
-  // Generate image prompt from scenario
+  // Only generate image prompt when scenario is submitted
   const imagePrompt = usePollinationsText(
-    scenarioInput ? `Convert this survival scenario into a vivid, detailed image prompt for a dramatic illustration: "${scenarioInput}"` : '',
+    submittedScenario ? `Convert this survival scenario into a vivid, detailed image prompt for a dramatic illustration: "${submittedScenario}"` : '',
     { 
       seed: 42,
       model: 'openai',
@@ -40,7 +41,7 @@ export const ScenarioCreation: React.FC = () => {
     }
   );
   
-  // Generate scenario image
+  // Generate scenario image only after prompt is ready
   const scenarioImage = usePollinationsImage(
     imagePrompt || '',
     { 
@@ -92,6 +93,9 @@ export const ScenarioCreation: React.FC = () => {
     
     setIsGenerating(true);
     
+    // Set the submitted scenario to trigger image generation
+    setSubmittedScenario(scenarioInput.trim());
+    
     try {
       // Wait for image to be generated
       await new Promise(resolve => {
@@ -106,9 +110,15 @@ export const ScenarioCreation: React.FC = () => {
       });
       
       // Set scenario in store
+      console.log('💾 Setting scenario in store:', scenarioInput.trim());
       setScenario(scenarioInput.trim(), scenarioImage);
       
       // Broadcast scenario to all players
+      console.log('📡 Broadcasting scenario to all players');
+      console.log('📡 Connection status:', isConnected);
+      console.log('📡 Scenario text:', scenarioInput.trim());
+      console.log('📡 Scenario image:', scenarioImage);
+      
       sendMessage({
         type: 'scenario_broadcast',
         data: {
@@ -118,8 +128,23 @@ export const ScenarioCreation: React.FC = () => {
         }
       });
       
+      console.log('📡 Scenario broadcast message sent');
+      
       // Move to strategy phase
+      console.log('🔄 Moving to strategy phase');
       setPhase('strategy');
+      
+      // Send game state sync to ensure all players are in sync
+      setTimeout(() => {
+        console.log('🔄 Sending game state sync after scenario broadcast');
+        sendMessage({
+          type: 'game_state_sync',
+          data: {
+            currentPhase: 'strategy',
+            scenarioMakerId: currentPlayerId
+          }
+        });
+      }, 500);
       
     } catch (error) {
       console.error('Error submitting scenario:', error);
