@@ -6,6 +6,8 @@ import { useGameTimer } from '../hooks/useGameTimer';
 import { useWebRTCContext } from '../context/WebRTCContext';
 import { Timer } from './Timer';
 import { generateTTS } from '../utils/pollinationsAudio';
+import { enhanceScenario } from '../utils/pollinationsText';
+import { AudioPlayer } from './AudioPlayer';
 
 export const ScenarioCreation: React.FC = () => {
   const [scenarioInput, setScenarioInput] = useState('');
@@ -20,6 +22,7 @@ export const ScenarioCreation: React.FC = () => {
     setPhase,
     isHost,
     currentRound,
+    scenarioAudioUrl,
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
@@ -141,12 +144,13 @@ export const ScenarioCreation: React.FC = () => {
         };
         checkImage();
       });
-      
-      const audioUrl = await generateTTS(scenarioInput.trim());
+
+      const enhanced = await enhanceScenario(scenarioInput.trim());
+      const audioUrl = await generateTTS(enhanced);
 
       // Set scenario in store
-      console.log('💾 Setting scenario in store:', scenarioInput.trim());
-      setScenario(scenarioInput.trim(), scenarioImage, audioUrl);
+      console.log('💾 Setting scenario in store:', enhanced);
+      setScenario(enhanced, scenarioImage, audioUrl);
       
       // Broadcast scenario to all players
       console.log('📡 Broadcasting scenario to all players');
@@ -157,7 +161,7 @@ export const ScenarioCreation: React.FC = () => {
       sendMessage({
         type: 'scenario_broadcast',
         data: {
-          text: scenarioInput.trim(),
+          text: enhanced,
           imageUrl: scenarioImage,
           audioUrl,
         }
@@ -279,6 +283,7 @@ export const ScenarioCreation: React.FC = () => {
                   <p className="text-gray-300 bg-gray-700 p-3 rounded">
                     {scenarioInput}
                   </p>
+                  <AudioPlayer src={scenarioAudioUrl} label="🔊 Listen" />
                 </div>
                 
                 {scenarioImage ? (

@@ -95,10 +95,14 @@ export const useWebRTC = (): UseWebRTCReturn => {
                 // Also update phase for non-host players
                 setPhase('strategy');
                 console.log('Scenario received, switching to strategy phase');
+                if (message.data.audioUrl) {
+                    window.dispatchEvent(new CustomEvent('scenarioReceived', { detail: { audioUrl: message.data.audioUrl } }));
+                }
                 break;
 
             case 'strategy_submission':
                 addStrategy(message.data);
+                window.dispatchEvent(new CustomEvent('strategyReceived', { detail: { strategy: message.data } }));
                 const state = useGameStore.getState();
                 if (state.isHost) {
                     const activePlayers = state.players.filter(p => p.isConnected);

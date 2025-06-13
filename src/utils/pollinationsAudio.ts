@@ -1,8 +1,8 @@
-export async function generateTTS(text: string, voice = 'nova'): Promise<string> {
+export function getTTSUrl(text: string, voice = 'nova'): string {
   const encoded = encodeURIComponent(text);
-  const url = `https://text.pollinations.ai/${encoded}?model=openai-audio&voice=${voice}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to generate audio');
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  return `https://text.pollinations.ai/${encoded}?model=openai-audio&voice=${voice}`;
+}
+
+export async function generateTTS(text: string, voice = 'nova'): Promise<string> {
+  return getTTSUrl(text, voice);
 }

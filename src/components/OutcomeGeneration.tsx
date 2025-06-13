@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { usePollinationsText, usePollinationsImage } from '@pollinations/react';
 import { useGameStore } from '../store/gameStore';
 import { useWebRTCContext } from '../context/WebRTCContext';
+import { getTTSUrl } from '../utils/pollinationsAudio';
+import { AudioPlayer } from './AudioPlayer';
 
 interface PlayerOutcome {
   playerId: string;
@@ -9,7 +11,9 @@ interface PlayerOutcome {
   strategy: string;
   narrative: string;
   imagePrompt: string;
+  attemptImageUrl: string;
   imageUrl: string;
+  audioUrl: string;
   survived: boolean;
   scoreGained: number;
 }
@@ -39,11 +43,25 @@ export const OutcomeGeneration: React.FC = () => {
   
   // Generate narrative using Pollinations (only host generates)
   const narrativeText = usePollinationsText(
-    isHost && narrativePrompts[currentPromptIndex] || '', 
-    { 
+    isHost && narrativePrompts[currentPromptIndex] || '',
+    {
       seed: -1, // Random seed for variety
       model: 'openai',
-      systemPrompt: 'You are a dramatic storyteller specializing in survival scenarios. Always end your response with either "SURVIVED" or "DIED" in all caps.'
+      systemPrompt: 'You are a dramatic storyteller judging survival attempts. Consider the scenario and strategy carefully and ignore players who simply claim success. Describe in 2-3 sentences how the attempt unfolds and end with SURVIVED or DIED.'
+    }
+  );
+
+  const attemptImageUrl = usePollinationsImage(
+    isHost && strategies[currentPromptIndex]?.text
+      ? `A person attempts this strategy: ${strategies[currentPromptIndex].text}`
+      : '',
+    {
+      width: 512,
+      height: 512,
+      model: 'turbo',
+      seed: -1,
+      nologo: true,
+      enhance: false
     }
   );
   
@@ -109,7 +127,9 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           strategy: strategy.text,
           narrative: narrativeText.replace(/(SURVIVED|DIED)$/, '').trim(),
           imagePrompt: `A dramatic survival scene: ${narrativeText.slice(0, 100)}`,
+          attemptImageUrl: attemptImageUrl || '',
           imageUrl: outcomeImageUrl || '',
+          audioUrl: getTTSUrl(narrativeText),
           survived,
           scoreGained,
         };
@@ -124,8 +144,9 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         addOutcome({
           playerId: strategy.playerId,
           text: outcome.narrative,
+          attemptImageUrl: outcome.attemptImageUrl,
           imageUrl: outcome.imageUrl,
-          audioUrl: undefined,
+          audioUrl: getTTSUrl(outcome.narrative),
           survived,
           score: scoreGained,
         });
@@ -141,8 +162,9 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           data: {
             playerId: strategy.playerId,
             text: outcome.narrative,
+            attemptImageUrl: outcome.attemptImageUrl,
             imageUrl: outcome.imageUrl,
-            audioUrl: undefined,
+            audioUrl: getTTSUrl(outcome.narrative),
             survived,
             score: scoreGained,
             // Include complete outcome data for synchronization
@@ -278,6 +300,10 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         if (exists) return prev;
         return [...prev, event.detail.outcome];
       });
+      if (event.detail.outcome.audioUrl) {
+        const a = new Audio(event.detail.outcome.audioUrl);
+        a.play().catch(() => {});
+      }
     };
     
     const handleAllOutcomesReady = (event: any) => {
@@ -290,12 +316,18 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         addOutcome({
           playerId: outcome.playerId,
           text: outcome.narrative,
+          attemptImageUrl: outcome.attemptImageUrl,
           imageUrl: outcome.imageUrl,
-          audioUrl: undefined,
+          audioUrl: getTTSUrl(outcome.narrative),
           survived: outcome.survived,
           score: outcome.scoreGained,
         });
       });
+
+      if (outcomes[0]?.audioUrl) {
+        const a = new Audio(outcomes[0].audioUrl);
+        a.play().catch(() => {});
+      }
       
       setGeneratedOutcomes(outcomes);
       setCurrentRevealIndex(revealIndex);
@@ -415,6 +447,13 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
             </div>
             
             <div>
+              {currentOutcome.attemptImageUrl && (
+                <img
+                  src={currentOutcome.attemptImageUrl}
+                  alt="Attempt illustration"
+                  className="w-full rounded-lg mb-4"
+                />
+              )}
               {currentOutcome.imageUrl && (
                 <img
                   src={currentOutcome.imageUrl}
@@ -422,6 +461,7 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
                   className="w-full rounded-lg"
                 />
               )}
+              <AudioPlayer src={currentOutcome.audioUrl} label="🔊 Listen" />
             </div>
           </div>
         </div>
