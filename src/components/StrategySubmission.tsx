@@ -276,7 +276,6 @@ export const StrategySubmission: React.FC = () => {
               <p className="text-gray-300">
                   {strategies.find(s => s.playerId === currentPlayerId)?.text || strategyInput}
                 </p>
-                <AudioPlayer src={strategies.find(s => s.playerId === currentPlayerId)?.audioUrl} label="🔊 Listen" />
               </div>
               
               <div className="mt-6">

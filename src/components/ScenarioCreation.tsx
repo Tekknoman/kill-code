@@ -275,7 +275,7 @@ export const ScenarioCreation: React.FC = () => {
           
           <div className="card">
             <h3 className="text-lg font-bold mb-4">Preview</h3>
-            
+
             {scenarioInput ? (
               <div className="space-y-4">
                 <div>
@@ -283,10 +283,9 @@ export const ScenarioCreation: React.FC = () => {
                   <p className="text-gray-300 bg-gray-700 p-3 rounded">
                     {scenarioInput}
                   </p>
-                  <AudioPlayer src={scenarioAudioUrl} label="🔊 Listen" />
                 </div>
-                
-                {scenarioImage ? (
+
+                {submittedScenario && scenarioImage ? (
                   <div>
                     <h4 className="font-medium mb-2">Generated Image:</h4>
                     <img
@@ -294,15 +293,9 @@ export const ScenarioCreation: React.FC = () => {
                       alt="Scenario illustration"
                       className="w-full rounded-lg"
                     />
+                    <AudioPlayer src={scenarioAudioUrl} label="🔊 Listen" />
                   </div>
-                ) : (
-                  <div>
-                    <h4 className="font-medium mb-2">Generating Image:</h4>
-                    <div className="w-full h-48 bg-gray-700 rounded-lg flex items-center justify-center">
-                      <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                    </div>
-                  </div>
-                )}
+                ) : null}
               </div>
             ) : (
               <p className="text-gray-400 text-center py-8">
