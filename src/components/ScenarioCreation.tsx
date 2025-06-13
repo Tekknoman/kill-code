@@ -5,6 +5,7 @@ import { useGameStore } from '../store/gameStore';
 import { useGameTimer } from '../hooks/useGameTimer';
 import { useWebRTCContext } from '../context/WebRTCContext';
 import { Timer } from './Timer';
+import { generateTTS } from '../utils/pollinationsAudio';
 
 export const ScenarioCreation: React.FC = () => {
   const [scenarioInput, setScenarioInput] = useState('');
@@ -141,9 +142,11 @@ export const ScenarioCreation: React.FC = () => {
         checkImage();
       });
       
+      const audioUrl = await generateTTS(scenarioInput.trim());
+
       // Set scenario in store
       console.log('💾 Setting scenario in store:', scenarioInput.trim());
-      setScenario(scenarioInput.trim(), scenarioImage);
+      setScenario(scenarioInput.trim(), scenarioImage, audioUrl);
       
       // Broadcast scenario to all players
       console.log('📡 Broadcasting scenario to all players');
@@ -156,7 +159,7 @@ export const ScenarioCreation: React.FC = () => {
         data: {
           text: scenarioInput.trim(),
           imageUrl: scenarioImage,
-          audioUrl: null, // TODO: Implement TTS
+          audioUrl,
         }
       });
       

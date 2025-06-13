@@ -99,6 +99,17 @@ export const useWebRTC = (): UseWebRTCReturn => {
 
             case 'strategy_submission':
                 addStrategy(message.data);
+                const state = useGameStore.getState();
+                if (state.isHost) {
+                    const activePlayers = state.players.filter(p => p.isConnected);
+                    if (state.currentPhase === 'strategy' && state.strategies.length >= activePlayers.length && state.strategies.length > 0) {
+                        setPhase('outcomes');
+                        sendMessage({
+                            type: 'phase_change',
+                            data: { newPhase: 'outcomes' }
+                        });
+                    }
+                }
                 break;
 
             case 'outcome_broadcast':
