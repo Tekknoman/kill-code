@@ -18,6 +18,7 @@ export const ScenarioCreation: React.FC = () => {
     setScenario,
     setPhase,
     isHost,
+    currentRound,
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
@@ -96,6 +97,14 @@ export const ScenarioCreation: React.FC = () => {
       playerName: useGameStore.getState().players.find(p => p.id === currentPlayerId)?.name || 'Unknown'
     });
   }, [currentPlayerId, currentScenarioMakerId, isScenarioMaker, isHost]);
+  
+  // Reset local state when round changes
+  useEffect(() => {
+    console.log('🔄 ScenarioCreation: Round changed, resetting scenario input and transcript');
+    setScenarioInput('');
+    setSubmittedScenario('');
+    resetTranscript();
+  }, [currentRound]);
   
   const handleStartListening = () => {
     if (!browserSupportsSpeechRecognition) {

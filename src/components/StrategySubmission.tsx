@@ -7,7 +7,6 @@ import { Timer } from './Timer';
 
 export const StrategySubmission: React.FC = () => {
   const [strategyInput, setStrategyInput] = useState('');
-  const [hasSubmitted, setHasSubmitted] = useState(false);
   
   const {
     currentPlayerId,
@@ -19,6 +18,8 @@ export const StrategySubmission: React.FC = () => {
     addStrategy,
     setPhase,
     isHost,
+    currentRound,
+    currentPhase,
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
@@ -34,17 +35,37 @@ export const StrategySubmission: React.FC = () => {
   const activePlayers = players.filter(p => p.isConnected);
   const hasSubmittedStrategy = strategies.some(s => s.playerId === currentPlayerId);
   const allStrategiesSubmitted = strategies.length >= activePlayers.length;
+  
+  // Debug logging for strategy state (only on meaningful changes)
+  useEffect(() => {
+    console.log('🎯 StrategySubmission state debug:', {
+      currentRound,
+      currentPlayerId,
+      strategiesCount: strategies.length,
+      hasSubmittedStrategy,
+      allStrategiesSubmitted,
+      activePlayersCount: activePlayers.length,
+      allPlayers: players.map(p => ({ id: p.id, name: p.name, isConnected: p.isConnected })),
+      strategies: strategies.map(s => ({ playerId: s.playerId, text: s.text.substring(0, 20) + '...' }))
+    });
+  }, [currentRound, strategies.length, hasSubmittedStrategy, allStrategiesSubmitted]);
+  
+  // Reset local state when round changes
+  useEffect(() => {
+    console.log('🔄 Round changed, resetting strategy input and transcript');
+    setStrategyInput('');
+    resetTranscript();
+  }, [currentRound]);
 
-  // Define handleSubmitStrategy first so it can be used in useEffect
+  // Simplified strategy submission handler
   const handleSubmitStrategy = useCallback(() => {
     console.log('📝 Submitting strategy:', { 
       hasSubmittedStrategy, 
-      hasSubmitted, 
       strategyInput: strategyInput.trim(),
       currentPlayerId 
     });
     
-    if (hasSubmittedStrategy || hasSubmitted) {
+    if (hasSubmittedStrategy) {
       console.log('⚠️ Already submitted strategy, skipping');
       return;
     }
@@ -57,7 +78,6 @@ export const StrategySubmission: React.FC = () => {
     
     console.log('📝 Adding strategy to store:', strategy);
     addStrategy(strategy);
-    setHasSubmitted(true);
     
     // Send strategy to all players
     console.log('📡 Broadcasting strategy submission');
@@ -65,7 +85,7 @@ export const StrategySubmission: React.FC = () => {
       type: 'strategy_submission',
       data: strategy,
     });
-  }, [hasSubmittedStrategy, hasSubmitted, strategyInput, currentPlayerId, addStrategy, sendMessage]);
+  }, [hasSubmittedStrategy, strategyInput, currentPlayerId, addStrategy, sendMessage]);
   
   // Start timer when component mounts (only host controls timer)
   useEffect(() => {
@@ -73,10 +93,12 @@ export const StrategySubmission: React.FC = () => {
       isHost,
       isTimerActive, 
       strategyTimeLimit, 
-      timeRemaining 
+      timeRemaining,
+      currentRound
     });
     
-    if (isHost && !isTimerActive) {
+    // Only start timer if host and timer is not already active
+    if (isHost && !isTimerActive && timeRemaining === 0) {
       console.log('🕒 Host starting strategy timer for', strategyTimeLimit, 'seconds');
       startTimer(strategyTimeLimit);
       
@@ -90,46 +112,96 @@ export const StrategySubmission: React.FC = () => {
         }
       });
     }
-  }, [isHost, isTimerActive, strategyTimeLimit, startTimer, sendMessage]);
+  }, [isHost, isTimerActive, timeRemaining, strategyTimeLimit, startTimer, sendMessage, currentRound]);
   
   // Auto-submit empty strategy when timer expires (only for current player)
   useEffect(() => {
     console.log('⏰ Auto-submit effect:', { 
       timeRemaining, 
-      hasSubmittedStrategy, 
-      hasSubmitted,
-      shouldAutoSubmit: timeRemaining === 0 && !hasSubmittedStrategy && !hasSubmitted
+      hasSubmittedStrategy,
+      shouldAutoSubmit: timeRemaining === 0 && !hasSubmittedStrategy
     });
     
     // Only auto-submit if this player hasn't submitted yet and timer reached 0
-    if (timeRemaining === 0 && !hasSubmittedStrategy && !hasSubmitted) {
-      console.log('⏰ Timer expired, auto-submitting empty strategy for player:', currentPlayerId);
-      handleSubmitStrategy();
+    // Add a small delay to prevent multiple rapid calls
+    if (timeRemaining === 0 && !hasSubmittedStrategy) {
+      const timeoutId = setTimeout(() => {
+        // Double-check the condition before submitting
+        if (!strategies.some(s => s.playerId === currentPlayerId)) {
+          console.log('⏰ Timer expired, auto-submitting empty strategy for player:', currentPlayerId);
+          handleSubmitStrategy();
+        }
+      }, 100);
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [timeRemaining, hasSubmittedStrategy, hasSubmitted, handleSubmitStrategy, currentPlayerId]);
+  }, [timeRemaining, hasSubmittedStrategy, handleSubmitStrategy, currentPlayerId, strategies]);
   
-  // Move to outcomes phase when all strategies are submitted (only host controls phase transitions)
+  // Unified phase transition logic for host (handles both submitted and not submitted cases)
   useEffect(() => {
-    console.log('🎯 Strategy completion check:', {
+    // Only the host controls phase transitions
+    if (!isHost) return;
+    
+    const conditionDetails = {
+      isHost,
+      hasSubmittedStrategy,
       allStrategiesSubmitted,
       strategiesLength: strategies.length,
-      activePlayers: activePlayers.length,
-      isHost
-    });
+      activePlayersLength: activePlayers.length,
+      strategiesGreaterThanZero: strategies.length > 0,
+      shouldProceed: allStrategiesSubmitted && strategies.length > 0,
+      currentPhase
+    };
     
-    if (isHost && allStrategiesSubmitted && strategies.length > 0) {
-      console.log('🎯 All strategies submitted, host transitioning to outcomes phase');
-      setTimeout(() => {
+    console.log('🎯 UNIFIED Host strategy completion check:', conditionDetails);
+    
+    // Check if we should transition to outcomes
+    if (allStrategiesSubmitted && strategies.length > 0) {
+      const delay = hasSubmittedStrategy ? 1000 : 2000; // Shorter delay if host already submitted
+      console.log(`🎯 ✅ HOST CONDITIONS MET! Transitioning to outcomes phase in ${delay}ms...`);
+      
+      const timeoutId = setTimeout(() => {
+        console.log('🎯 🚀 HOST EXECUTING UNIFIED PHASE TRANSITION TO OUTCOMES');
         setPhase('outcomes');
-        // Broadcast phase change
         sendMessage({
           type: 'phase_change',
           data: { newPhase: 'outcomes' }
         });
-      }, 2000); // Give a moment to see all submissions
+      }, delay);
+      
+      return () => clearTimeout(timeoutId);
+    } else {
+      console.log('🎯 ❌ Unified conditions not met, not proceeding to outcomes');
     }
-  }, [isHost, allStrategiesSubmitted, strategies.length, setPhase, activePlayers.length, sendMessage]);
+  }, [isHost, hasSubmittedStrategy, allStrategiesSubmitted, strategies.length, currentPhase, setPhase, sendMessage]);
   
+  // Backup check - in case the main effect doesn't trigger properly
+  useEffect(() => {
+    if (!isHost) return;
+    
+    const interval = setInterval(() => {
+      const currentState = {
+        phase: currentPhase,
+        strategiesCount: strategies.length,
+        playersCount: activePlayers.length,
+        allSubmitted: strategies.length >= activePlayers.length
+      };
+      
+      console.log('🔄 Backup strategy check:', currentState);
+      
+      if (currentPhase === 'strategy' && strategies.length >= activePlayers.length && strategies.length > 0) {
+        console.log('🔄 🚨 BACKUP TRANSITION TRIGGERED - proceeding to outcomes');
+        setPhase('outcomes');
+        sendMessage({
+          type: 'phase_change',
+          data: { newPhase: 'outcomes' }
+        });
+      }
+    }, 3000);
+    
+    return () => clearInterval(interval);
+  }, [isHost, currentPhase, setPhase, sendMessage]);
+
   // Update strategy input with speech recognition
   useEffect(() => {
     if (transcript) {
@@ -151,7 +223,8 @@ export const StrategySubmission: React.FC = () => {
     SpeechRecognition.stopListening();
   };
   
-  if (hasSubmittedStrategy || hasSubmitted) {
+  if (hasSubmittedStrategy) {
+    
     return (
       <div className="min-h-screen bg-gray-900 p-6">
         <div className="max-w-4xl mx-auto">

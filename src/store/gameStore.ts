@@ -153,6 +153,15 @@ export const useGameStore = create<GameState>((set) => ({
         const nextMakerIndex = (currentMakerIndex + 1) % players.length;
         const nextScenarioMaker = players[nextMakerIndex]?.id || '';
 
+        console.log('🔄 nextRound called:', {
+            currentRound: state.currentRound,
+            nextRound,
+            currentScenarioMakerId: state.currentScenarioMakerId,
+            nextScenarioMaker,
+            strategiesBeforeClear: state.strategies.length,
+            outcomesBeforeClear: state.outcomes.length
+        });
+
         return {
             currentRound: nextRound,
             currentScenarioMakerId: nextScenarioMaker,

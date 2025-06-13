@@ -590,34 +590,39 @@ export const useWebRTC = (): UseWebRTCReturn => {
         }
     }, []);
 
-    // Auto-reconnection logic
+    // Simplified auto-reconnection logic - only if truly disconnected
     const attemptReconnection = useCallback((roomId: string, hostMode: boolean, playerName: string, playerId: string) => {
         console.log('🔄 Attempting reconnection...', { roomId, hostMode, playerName, playerId });
-        if (!isConnecting && !isConnected) {
+        if (!isConnecting && !isConnected && connectionsRef.current.size === 0) {
             setTimeout(() => {
                 connect(roomId, hostMode, playerName, playerId);
-            }, 2000); // Wait 2 seconds before reconnecting
+            }, 3000); // Wait 3 seconds before reconnecting
         }
-    }, [isConnecting, isConnected]);
+    }, [isConnecting, isConnected, connect]);
 
-    // Monitor connection drops and attempt reconnection
+    // Monitor connection drops and attempt reconnection (more conservative)
     useEffect(() => {
         if (!isConnected && connectionsRef.current.size === 0 && roomId && !isConnecting) {
             const { currentPlayerId, players, isHost } = useGameStore.getState();
             const currentPlayer = players.find(p => p.id === currentPlayerId);
             if (currentPlayerId && currentPlayer?.name) {
-                console.log('🔍 Connection lost, attempting reconnection in 3 seconds...');
-                setTimeout(() => {
-                    attemptReconnection(roomId, isHost, currentPlayer.name, currentPlayerId);
-                }, 3000);
+                console.log('🔍 Connection lost, will attempt reconnection in 5 seconds...');
+                const timeoutId = setTimeout(() => {
+                    // Double-check we're still disconnected before reconnecting
+                    if (!isConnected && connectionsRef.current.size === 0) {
+                        attemptReconnection(roomId, isHost, currentPlayer.name, currentPlayerId);
+                    }
+                }, 5000);
+
+                return () => clearTimeout(timeoutId);
             }
         }
     }, [isConnected, roomId, isConnecting, attemptReconnection]);
 
-    // Set up periodic health checks and pings
+    // Set up periodic health checks and pings (reduced frequency)
     useEffect(() => {
-        const pingInterval = setInterval(pingConnections, 15000); // Ping every 15 seconds
-        const healthInterval = setInterval(checkConnectionHealth, 5000); // Check health every 5 seconds
+        const pingInterval = setInterval(pingConnections, 20000); // Ping every 20 seconds
+        const healthInterval = setInterval(checkConnectionHealth, 10000); // Check health every 10 seconds
 
         return () => {
             clearInterval(pingInterval);
