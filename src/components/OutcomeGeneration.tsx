@@ -2,14 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { usePollinationsText, usePollinationsImage } from '@pollinations/react';
 import { useGameStore } from '../store/gameStore';
 import { useWebRTCContext } from '../context/WebRTCContext';
+import { getTTSUrl } from '../utils/pollinationsAudio';
+import { AudioPlayer } from './AudioPlayer';
 
 interface PlayerOutcome {
   playerId: string;
   playerName: string;
   strategy: string;
+  strategyAudioUrl?: string;
   narrative: string;
   imagePrompt: string;
+  attemptImageUrl: string;
   imageUrl: string;
+  audioUrl: string;
   survived: boolean;
   scoreGained: number;
 }
@@ -21,6 +26,7 @@ export const OutcomeGeneration: React.FC = () => {
   const [narrativePrompts, setNarrativePrompts] = useState<string[]>([]);
   const [currentPromptIndex, setCurrentPromptIndex] = useState(0);
   const [processedOutcomes, setProcessedOutcomes] = useState<Set<number>>(new Set());
+  const [revealStep, setRevealStep] = useState<'strategy' | 'result'>('strategy');
   
   const {
     players,
@@ -39,11 +45,25 @@ export const OutcomeGeneration: React.FC = () => {
   
   // Generate narrative using Pollinations (only host generates)
   const narrativeText = usePollinationsText(
-    isHost && narrativePrompts[currentPromptIndex] || '', 
-    { 
+    isHost && narrativePrompts[currentPromptIndex] || '',
+    {
       seed: -1, // Random seed for variety
       model: 'openai',
-      systemPrompt: 'You are a dramatic storyteller specializing in survival scenarios. Always end your response with either "SURVIVED" or "DIED" in all caps.'
+      systemPrompt: 'You are a dramatic storyteller judging survival attempts. Consider the scenario and strategy carefully and ignore players who simply claim success. Describe in 2-3 sentences how the attempt unfolds and end with SURVIVED or DIED.'
+    }
+  );
+
+  const attemptImageUrl = usePollinationsImage(
+    isHost && strategies[currentPromptIndex]?.text
+      ? `A person attempts this strategy: ${strategies[currentPromptIndex].text}`
+      : '',
+    {
+      width: 512,
+      height: 512,
+      model: 'turbo',
+      seed: -1,
+      nologo: true,
+      enhance: false
     }
   );
   
@@ -107,9 +127,12 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           playerId: strategy.playerId,
           playerName: player.name,
           strategy: strategy.text,
+          strategyAudioUrl: strategy.audioUrl,
           narrative: narrativeText.replace(/(SURVIVED|DIED)$/, '').trim(),
           imagePrompt: `A dramatic survival scene: ${narrativeText.slice(0, 100)}`,
+          attemptImageUrl: attemptImageUrl || '',
           imageUrl: outcomeImageUrl || '',
+          audioUrl: getTTSUrl(narrativeText),
           survived,
           scoreGained,
         };
@@ -124,8 +147,9 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         addOutcome({
           playerId: strategy.playerId,
           text: outcome.narrative,
+          attemptImageUrl: outcome.attemptImageUrl,
           imageUrl: outcome.imageUrl,
-          audioUrl: undefined,
+          audioUrl: getTTSUrl(outcome.narrative),
           survived,
           score: scoreGained,
         });
@@ -141,8 +165,10 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
           data: {
             playerId: strategy.playerId,
             text: outcome.narrative,
+            attemptImageUrl: outcome.attemptImageUrl,
             imageUrl: outcome.imageUrl,
-            audioUrl: undefined,
+            strategyAudioUrl: strategy.audioUrl,
+            audioUrl: getTTSUrl(outcome.narrative),
             survived,
             score: scoreGained,
             // Include complete outcome data for synchronization
@@ -269,6 +295,7 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
     const handleRevealNext = (event: any) => {
       console.log('🎭 Received reveal next event:', event.detail);
       setCurrentRevealIndex(event.detail.revealIndex);
+      setRevealStep('strategy');
     };
     
     const handleOutcomeReceived = (event: any) => {
@@ -278,6 +305,11 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         if (exists) return prev;
         return [...prev, event.detail.outcome];
       });
+      setRevealStep('strategy');
+      if (event.detail.outcome.audioUrl) {
+        const a = new Audio(event.detail.outcome.audioUrl);
+        a.play().catch(() => {});
+      }
     };
     
     const handleAllOutcomesReady = (event: any) => {
@@ -290,28 +322,42 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         addOutcome({
           playerId: outcome.playerId,
           text: outcome.narrative,
+          attemptImageUrl: outcome.attemptImageUrl,
           imageUrl: outcome.imageUrl,
-          audioUrl: undefined,
+          audioUrl: getTTSUrl(outcome.narrative),
           survived: outcome.survived,
           score: outcome.scoreGained,
         });
       });
-      
+
+      if (outcomes[0]?.audioUrl) {
+        const a = new Audio(outcomes[0].audioUrl);
+        a.play().catch(() => {});
+      }
+
       setGeneratedOutcomes(outcomes);
       setCurrentRevealIndex(revealIndex);
+      setRevealStep('strategy');
       setIsGenerating(false);
     };
     
     window.addEventListener('revealNext', handleRevealNext);
     window.addEventListener('outcomeReceived', handleOutcomeReceived);
     window.addEventListener('allOutcomesReady', handleAllOutcomesReady);
-    
+
     return () => {
       window.removeEventListener('revealNext', handleRevealNext);
       window.removeEventListener('outcomeReceived', handleOutcomeReceived);
       window.removeEventListener('allOutcomesReady', handleAllOutcomesReady);
     };
   }, []);
+
+  useEffect(() => {
+    if (revealStep === 'strategy') {
+      const t = setTimeout(() => setRevealStep('result'), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [revealStep, currentRevealIndex]);
   
   // Remove the old auto-advance logic and replace with host-controlled logic
   
@@ -359,7 +405,7 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
   }
   
   const currentOutcome = generatedOutcomes[currentRevealIndex];
-  
+
   if (!currentOutcome) {
     return (
       <div className="min-h-screen bg-gray-900 p-6 flex items-center justify-center">
@@ -384,43 +430,62 @@ Write a dramatic 2-3 sentence outcome that determines if they survived or died. 
         <div className="card">
           <div className="text-center mb-6">
             <h3 className="text-2xl font-bold mb-2">{currentOutcome.playerName}</h3>
-            <div className="bg-gray-700 p-4 rounded-lg mb-4">
-              <h4 className="font-medium mb-2">Their Strategy:</h4>
-              <p className="text-gray-300 italic">"{currentOutcome.strategy}"</p>
-            </div>
           </div>
-          
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
-              <h4 className="font-bold mb-4 text-lg">The Outcome:</h4>
-              <p className="text-gray-300 text-lg leading-relaxed mb-6">
-                {currentOutcome.narrative}
-              </p>
-              
-              <div className={`text-center p-6 rounded-lg text-2xl font-bold ${
-                currentOutcome.survived 
-                  ? 'bg-green-900 text-green-300 border border-green-600' 
-                  : 'bg-red-900 text-red-300 border border-red-600'
-              }`}>
-                {currentOutcome.survived ? '✅ SURVIVED' : '💀 DIED'}
-              </div>
-              
-              {currentOutcome.survived && (
-                <div className="text-center mt-4">
-                  <span className="text-yellow-400 font-bold">
-                    +{currentOutcome.scoreGained} points
-                  </span>
-                </div>
+              {revealStep === 'strategy' ? (
+                <>
+                  <h4 className="font-bold mb-4 text-lg">Their Attempt:</h4>
+                  <p className="text-gray-300 text-lg leading-relaxed mb-6">"{currentOutcome.strategy}"</p>
+                </>
+              ) : (
+                <>
+                  <h4 className="font-bold mb-4 text-lg">The Outcome:</h4>
+                  <p className="text-gray-300 text-lg leading-relaxed mb-6">{currentOutcome.narrative}</p>
+                  <div className={`text-center p-6 rounded-lg text-2xl font-bold ${
+                    currentOutcome.survived
+                      ? 'bg-green-900 text-green-300 border border-green-600'
+                      : 'bg-red-900 text-red-300 border border-red-600'
+                  }`}>
+                    {currentOutcome.survived ? '✅ SURVIVED' : '💀 DIED'}
+                  </div>
+                  {currentOutcome.survived && (
+                    <div className="text-center mt-4">
+                      <span className="text-yellow-400 font-bold">
+                        +{currentOutcome.scoreGained} points
+                      </span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
-            
+
             <div>
-              {currentOutcome.imageUrl && (
-                <img
-                  src={currentOutcome.imageUrl}
-                  alt="Outcome illustration"
-                  className="w-full rounded-lg"
-                />
+              {revealStep === 'strategy' ? (
+                <>
+                  {currentOutcome.attemptImageUrl && (
+                    <img
+                      src={currentOutcome.attemptImageUrl}
+                      alt="Attempt illustration"
+                      className="w-full rounded-lg mb-4"
+                    />
+                  )}
+                  {currentOutcome.strategyAudioUrl && (
+                    <AudioPlayer src={currentOutcome.strategyAudioUrl} label="🔊 Listen" />
+                  )}
+                </>
+              ) : (
+                <>
+                  {currentOutcome.imageUrl && (
+                    <img
+                      src={currentOutcome.imageUrl}
+                      alt="Outcome illustration"
+                      className="w-full rounded-lg mb-4"
+                    />
+                  )}
+                  <AudioPlayer src={currentOutcome.audioUrl} label="🔊 Listen" />
+                </>
               )}
             </div>
           </div>

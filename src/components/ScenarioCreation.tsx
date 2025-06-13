@@ -5,6 +5,9 @@ import { useGameStore } from '../store/gameStore';
 import { useGameTimer } from '../hooks/useGameTimer';
 import { useWebRTCContext } from '../context/WebRTCContext';
 import { Timer } from './Timer';
+import { generateTTS } from '../utils/pollinationsAudio';
+import { enhanceScenario } from '../utils/pollinationsText';
+import { AudioPlayer } from './AudioPlayer';
 
 export const ScenarioCreation: React.FC = () => {
   const [scenarioInput, setScenarioInput] = useState('');
@@ -19,6 +22,7 @@ export const ScenarioCreation: React.FC = () => {
     setPhase,
     isHost,
     currentRound,
+    scenarioAudioUrl,
   } = useGameStore();
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
@@ -140,10 +144,13 @@ export const ScenarioCreation: React.FC = () => {
         };
         checkImage();
       });
-      
+
+      const enhanced = await enhanceScenario(scenarioInput.trim());
+      const audioUrl = await generateTTS(enhanced);
+
       // Set scenario in store
-      console.log('💾 Setting scenario in store:', scenarioInput.trim());
-      setScenario(scenarioInput.trim(), scenarioImage);
+      console.log('💾 Setting scenario in store:', enhanced);
+      setScenario(enhanced, scenarioImage, audioUrl);
       
       // Broadcast scenario to all players
       console.log('📡 Broadcasting scenario to all players');
@@ -154,9 +161,9 @@ export const ScenarioCreation: React.FC = () => {
       sendMessage({
         type: 'scenario_broadcast',
         data: {
-          text: scenarioInput.trim(),
+          text: enhanced,
           imageUrl: scenarioImage,
-          audioUrl: null, // TODO: Implement TTS
+          audioUrl,
         }
       });
       
@@ -268,7 +275,7 @@ export const ScenarioCreation: React.FC = () => {
           
           <div className="card">
             <h3 className="text-lg font-bold mb-4">Preview</h3>
-            
+
             {scenarioInput ? (
               <div className="space-y-4">
                 <div>
@@ -277,8 +284,8 @@ export const ScenarioCreation: React.FC = () => {
                     {scenarioInput}
                   </p>
                 </div>
-                
-                {scenarioImage ? (
+
+                {submittedScenario && scenarioImage ? (
                   <div>
                     <h4 className="font-medium mb-2">Generated Image:</h4>
                     <img
@@ -286,15 +293,9 @@ export const ScenarioCreation: React.FC = () => {
                       alt="Scenario illustration"
                       className="w-full rounded-lg"
                     />
+                    <AudioPlayer src={scenarioAudioUrl} label="🔊 Listen" />
                   </div>
-                ) : (
-                  <div>
-                    <h4 className="font-medium mb-2">Generating Image:</h4>
-                    <div className="w-full h-48 bg-gray-700 rounded-lg flex items-center justify-center">
-                      <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full"></div>
-                    </div>
-                  </div>
-                )}
+                ) : null}
               </div>
             ) : (
               <p className="text-gray-400 text-center py-8">

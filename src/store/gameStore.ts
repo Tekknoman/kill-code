@@ -13,11 +13,13 @@ export interface Strategy {
     playerId: string;
     text: string;
     submittedAt: number;
+    audioUrl?: string;
 }
 
 export interface Outcome {
     playerId: string;
     text: string;
+    attemptImageUrl?: string;
     imageUrl?: string;
     audioUrl?: string;
     survived: boolean;

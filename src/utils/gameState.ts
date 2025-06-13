@@ -22,11 +22,14 @@ export interface PersistedGameState {
         playerId: string;
         text: string;
         submittedAt: number;
+        audioUrl?: string;
     }>;
     outcomes: Array<{
         playerId: string;
         text: string;
+        attemptImageUrl?: string;
         imageUrl?: string;
+        audioUrl?: string;
         survived: boolean;
         score: number;
     }>;

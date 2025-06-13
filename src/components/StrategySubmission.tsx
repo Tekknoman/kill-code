@@ -4,6 +4,8 @@ import { useGameStore } from '../store/gameStore';
 import { useGameTimer } from '../hooks/useGameTimer';
 import { useWebRTCContext } from '../context/WebRTCContext';
 import { Timer } from './Timer';
+import { getTTSUrl } from '../utils/pollinationsAudio';
+import { AudioPlayer } from './AudioPlayer';
 
 export const StrategySubmission: React.FC = () => {
   const [strategyInput, setStrategyInput] = useState('');
@@ -15,6 +17,7 @@ export const StrategySubmission: React.FC = () => {
     strategyTimeLimit,
     scenarioText,
     scenarioImageUrl,
+    scenarioAudioUrl,
     addStrategy,
     setPhase,
     isHost,
@@ -24,6 +27,24 @@ export const StrategySubmission: React.FC = () => {
   
   const { startTimer, timeRemaining, isTimerActive } = useGameTimer();
   const { sendMessage } = useWebRTCContext();
+  useEffect(() => {
+    if (scenarioAudioUrl) {
+      const a = new Audio(scenarioAudioUrl);
+      a.play().catch(() => {});
+    }
+  }, [scenarioAudioUrl]);
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      const url = e.detail.audioUrl;
+      if (url) {
+        const a = new Audio(url);
+        a.play().catch(() => {});
+      }
+    };
+    window.addEventListener('scenarioReceived', handler);
+    return () => window.removeEventListener('scenarioReceived', handler);
+  }, []);
   
   const {
     transcript,
@@ -35,6 +56,18 @@ export const StrategySubmission: React.FC = () => {
   const activePlayers = players.filter(p => p.isConnected);
   const hasSubmittedStrategy = strategies.some(s => s.playerId === currentPlayerId);
   const allStrategiesSubmitted = strategies.length >= activePlayers.length;
+
+  useEffect(() => {
+    const handler = (e: any) => {
+      const url = e.detail.strategy.audioUrl;
+      if (url) {
+        const a = new Audio(url);
+        a.play().catch(() => {});
+      }
+    };
+    window.addEventListener('strategyReceived', handler);
+    return () => window.removeEventListener('strategyReceived', handler);
+  }, []);
   
   // Debug logging for strategy state (only on meaningful changes)
   useEffect(() => {
@@ -74,6 +107,7 @@ export const StrategySubmission: React.FC = () => {
       playerId: currentPlayerId,
       text: strategyInput.trim() || 'No strategy submitted',
       submittedAt: Date.now(),
+      audioUrl: getTTSUrl(strategyInput.trim() || 'No strategy submitted')
     };
     
     console.log('📝 Adding strategy to store:', strategy);
@@ -124,7 +158,7 @@ export const StrategySubmission: React.FC = () => {
     
     // Only auto-submit if this player hasn't submitted yet and timer reached 0
     // Add a small delay to prevent multiple rapid calls
-    if (timeRemaining === 0 && !hasSubmittedStrategy) {
+    if (isTimerActive && timeRemaining === 0 && !hasSubmittedStrategy) {
       const timeoutId = setTimeout(() => {
         // Double-check the condition before submitting
         if (!strategies.some(s => s.playerId === currentPlayerId)) {
@@ -135,7 +169,7 @@ export const StrategySubmission: React.FC = () => {
       
       return () => clearTimeout(timeoutId);
     }
-  }, [timeRemaining, hasSubmittedStrategy, handleSubmitStrategy, currentPlayerId, strategies]);
+  }, [timeRemaining, hasSubmittedStrategy, handleSubmitStrategy, currentPlayerId, strategies, isTimerActive]);
   
   // Unified phase transition logic for host (handles both submitted and not submitted cases)
   useEffect(() => {
@@ -239,7 +273,7 @@ export const StrategySubmission: React.FC = () => {
               
               <div className="bg-gray-700 p-4 rounded-lg">
                 <h4 className="font-medium mb-2">Your Strategy:</h4>
-                <p className="text-gray-300">
+              <p className="text-gray-300">
                   {strategies.find(s => s.playerId === currentPlayerId)?.text || strategyInput}
                 </p>
               </div>
@@ -272,6 +306,7 @@ export const StrategySubmission: React.FC = () => {
                 />
               )}
               <p className="text-gray-300">{scenarioText}</p>
+              <AudioPlayer src={scenarioAudioUrl} label="🔊 Listen" />
             </div>
           </div>
         </div>
@@ -365,6 +400,7 @@ export const StrategySubmission: React.FC = () => {
               />
             )}
             <p className="text-gray-300 mb-4">{scenarioText}</p>
+            <AudioPlayer src={scenarioAudioUrl} label="🔊 Listen" />
             
             <div className="text-sm text-gray-400">
               <p>Think about:</p>
